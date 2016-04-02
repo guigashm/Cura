@@ -1,29 +1,21 @@
 # Copyright (c) 2015 Ultimaker B.V.
 # Cura is released under the terms of the AGPLv3 or higher.
 
-import platform
-
 from UM.Qt.QtApplication import QtApplication
 from UM.Scene.SceneNode import SceneNode
 from UM.Scene.Camera import Camera
 from UM.Scene.Platform import Platform
 from UM.Math.Vector import Vector
-from UM.Math.Matrix import Matrix
 from UM.Math.Quaternion import Quaternion
 from UM.Math.AxisAlignedBox import AxisAlignedBox
 from UM.Resources import Resources
 from UM.Scene.ToolHandle import ToolHandle
 from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
-from UM.Mesh.WriteMeshJob import WriteMeshJob
 from UM.Mesh.ReadMeshJob import ReadMeshJob
 from UM.Logger import Logger
 from UM.Preferences import Preferences
-from UM.Message import Message
-from UM.PluginRegistry import PluginRegistry
 from UM.JobQueue import JobQueue
-from UM.Math.Polygon import Polygon
 
-from UM.Scene.BoxRenderer import BoxRenderer
 from UM.Scene.Selection import Selection
 from UM.Scene.GroupDecorator import GroupDecorator
 
@@ -43,13 +35,12 @@ from . import MultiMaterialDecorator
 from . import ZOffsetDecorator
 from . import CuraSplashScreen
 
-from PyQt5.QtCore import pyqtSlot, QUrl, Qt, pyqtSignal, pyqtProperty, QEvent, Q_ENUMS
+from PyQt5.QtCore import pyqtSlot, QUrl, pyqtSignal, pyqtProperty, QEvent, Q_ENUMS
 from PyQt5.QtGui import QColor, QIcon
 from PyQt5.QtQml import qmlRegisterUncreatableType
 
 import platform
 import sys
-import os
 import os.path
 import numpy
 import copy
@@ -77,6 +68,8 @@ class CuraApplication(QtApplication):
         Resources.addSearchPath(os.path.join(QtApplication.getInstallPrefix(), "share", "cura"))
         if not hasattr(sys, "frozen"):
             Resources.addSearchPath(os.path.join(os.path.abspath(os.path.dirname(__file__)), ".."))
+
+        self._open_file_queue = [] #Files to open when plug-ins are loaded.
 
         super().__init__(name = "cura", version = CuraVersion)
 
@@ -129,6 +122,10 @@ class CuraApplication(QtApplication):
                 continue
 
             self._recent_files.append(QUrl.fromLocalFile(f))
+
+    @pyqtSlot(result = QUrl)
+    def getDefaultPath(self):
+        return QUrl.fromLocalFile(os.path.expanduser("~/"))
     
     ##  Handle loading of all plugin types (and the backend explicitly)
     #   \sa PluginRegistery
@@ -143,6 +140,8 @@ class CuraApplication(QtApplication):
 
         if self.getBackend() == None:
             raise RuntimeError("Could not load the backend plugin!")
+
+        self._plugins_loaded = True
 
     def addCommandLineOptions(self, parser):
         super().addCommandLineOptions(parser)
@@ -201,13 +200,18 @@ class CuraApplication(QtApplication):
 
             for file in self.getCommandLineOption("file", []):
                 self._openFile(file)
+            for file_name in self._open_file_queue: #Open all the files that were queued up while plug-ins were loading.
+                self._openFile(file_name)
 
             self.exec_()
 
     #   Handle Qt events
     def event(self, event):
         if event.type() == QEvent.FileOpen:
-            self._openFile(event.file())
+            if self._plugins_loaded:
+                self._openFile(event.file())
+            else:
+                self._open_file_queue.append(event.file())
 
         return super().event(event)
 
@@ -268,7 +272,7 @@ class CuraApplication(QtApplication):
 
             count += 1
             if not scene_boundingbox:
-                scene_boundingbox = node.getBoundingBox()
+                scene_boundingbox = copy.deepcopy(node.getBoundingBox())
             else:
                 scene_boundingbox += node.getBoundingBox()
 
@@ -343,7 +347,7 @@ class CuraApplication(QtApplication):
 
         if node:
             op = GroupedOperation()
-            for i in range(count):
+            for _ in range(count):
                 if node.getParent() and node.getParent().callDecoration("isGroup"):
                     new_node = copy.deepcopy(node.getParent()) #Copy the group node.
                     new_node.callDecoration("setConvexHull",None)
@@ -518,6 +522,7 @@ class CuraApplication(QtApplication):
         try:
             group_node = Selection.getAllSelectedObjects()[0]
         except Exception as e:
+            Logger.log("d", "mergeSelected: Exception:", e)
             return
         multi_material_decorator = MultiMaterialDecorator.MultiMaterialDecorator()
         group_node.addDecorator(multi_material_decorator)
@@ -536,6 +541,7 @@ class CuraApplication(QtApplication):
         group_decorator = GroupDecorator()
         group_node.addDecorator(group_decorator)
         group_node.setParent(self.getController().getScene().getRoot())
+        group_node.setSelectable(True)
         center = Selection.getSelectionCenter()
         group_node.setPosition(center)
         group_node.setCenterPosition(center)

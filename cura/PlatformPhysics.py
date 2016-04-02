@@ -5,8 +5,6 @@ from PyQt5.QtCore import QTimer
 
 from UM.Scene.SceneNode import SceneNode
 from UM.Scene.Iterator.BreadthFirstIterator import BreadthFirstIterator
-from UM.Operations.TranslateOperation import TranslateOperation
-from UM.Math.Float import Float
 from UM.Math.Vector import Vector
 from UM.Math.AxisAlignedBox import AxisAlignedBox
 from UM.Application import Application
@@ -19,8 +17,6 @@ from . import PlatformPhysicsOperation
 from . import ConvexHullJob
 from . import ZOffsetDecorator
 
-import time
-import threading
 import copy
 
 class PlatformPhysics:
@@ -60,12 +56,16 @@ class PlatformPhysics:
 
             build_volume_bounding_box = copy.deepcopy(self._build_volume.getBoundingBox())
             build_volume_bounding_box.setBottom(-9001) # Ignore intersections with the bottom
+            node._outside_buildarea = False
 
             # Mark the node as outside the build volume if the bounding box test fails.
             if build_volume_bounding_box.intersectsBox(bbox) != AxisAlignedBox.IntersectionResult.FullIntersection:
                 node._outside_buildarea = True
             else:
-                node._outside_buildarea = False
+                # When printing one at a time too high objects are not printable.
+                if Application.getInstance().getMachineManager().getWorkingProfile().getSettingValue("print_sequence") == "one_at_a_time":
+                    if node.getBoundingBox().height > Application.getInstance().getMachineManager().getWorkingProfile().getSettingValue("gantry_height"):
+                        node._outside_buildarea = True
 
             # Move it downwards if bottom is above platform
             move_vector = Vector()
@@ -88,9 +88,7 @@ class PlatformPhysics:
                     job = ConvexHullJob.ConvexHullJob(node)
                     job.start()
                     node.callDecoration("setConvexHullJob", job)
-
-            elif Selection.isSelected(node):
-                pass
+                    
             elif Preferences.getInstance().getValue("physics/automatic_push_free"):
                 # Check for collisions between convex hulls
                 for other_node in BreadthFirstIterator(root):
@@ -128,7 +126,7 @@ class PlatformPhysics:
                         else:
                             overlap = node.callDecoration("getConvexHull").intersectsPolygon(other_node.callDecoration("getConvexHull"))
                     except:
-                        overlap = None #It can sometimes occur that the caclulated convex hull has no size, in which case there is no overlap.
+                        overlap = None #It can sometimes occur that the calculated convex hull has no size, in which case there is no overlap.
 
                     if overlap is None:
                         continue

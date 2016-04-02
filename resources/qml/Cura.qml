@@ -77,7 +77,7 @@ UM.MainWindow
                             onTriggered: {
                                 UM.MeshFileHandler.readLocalFile(modelData);
                                 var meshName = backgroundItem.getMeshName(modelData.toString())
-                                backgroundItem.hasMesh(meshName)
+                                backgroundItem.hasMesh(decodeURIComponent(meshName))
                             }
                         }
                         onObjectAdded: recentFilesMenu.insertItem(index, object)
@@ -92,7 +92,7 @@ UM.MainWindow
                     text: catalog.i18nc("@action:inmenu menubar:file", "&Save Selection to File");
                     enabled: UM.Selection.hasSelection;
                     iconName: "document-save-as";
-                    onTriggered: UM.OutputDeviceManager.requestWriteSelectionToDevice("local_file", Printer.jobName, false);
+                    onTriggered: UM.OutputDeviceManager.requestWriteSelectionToDevice("local_file", Printer.jobName, { "filter_by_machine": false });
                 }
                 Menu
                 {
@@ -108,7 +108,7 @@ UM.MainWindow
                         MenuItem
                         {
                             text: model.description;
-                            onTriggered: UM.OutputDeviceManager.requestWriteToDevice(model.id, Printer.jobName, false);
+                            onTriggered: UM.OutputDeviceManager.requestWriteToDevice(model.id, Printer.jobName, { "filter_by_machine": false });
                         }
                         onObjectAdded: saveAllMenu.insertItem(index, object)
                         onObjectRemoved: saveAllMenu.removeItem(object)
@@ -214,21 +214,68 @@ UM.MainWindow
 
                 Instantiator
                 {
-                    model: UM.ProfilesModel { }
-                    MenuItem {
-                        text: model.name;
-                        checkable: true;
-                        checked: model.active;
-                        exclusiveGroup: profileMenuGroup;
-                        onTriggered: UM.MachineManager.setActiveProfile(model.name)
+                    id: profileMenuInstantiator
+                    model: UM.ProfilesModel {}
+                    property int separatorIndex: -1
+
+                    Loader {
+                        property QtObject model_data: model
+                        property int model_index: index
+                        sourceComponent: profileMenuItemDelegate
                     }
-                    onObjectAdded: profileMenu.insertItem(index, object)
-                    onObjectRemoved: profileMenu.removeItem(object)
+
+                    onObjectAdded:
+                    {
+                        //Insert a separator between readonly and custom profiles
+                        if(separatorIndex < 0 && index > 0) {
+                            if(model.getItem(index-1).readOnly != model.getItem(index).readOnly) {
+                                profileMenu.addSeparator();
+                                separatorIndex = index;
+                            }
+                        }
+                        //Because of the separator, custom profiles move one index lower
+                        profileMenu.insertItem((model.getItem(index).readOnly) ? index : index + 1, object.item);
+                    }
+                    onObjectRemoved:
+                    {
+                        //When adding a profile, the menu is rebuild by removing all items.
+                        //If a separator was added, we need to remove that too.
+                        if(separatorIndex >= 0)
+                        {
+                            profileMenu.removeItem(profileMenu.items[separatorIndex])
+                            separatorIndex = -1;
+                        }
+                        profileMenu.removeItem(object.item);
+                    }
                 }
 
                 ExclusiveGroup { id: profileMenuGroup; }
 
-                MenuSeparator { }
+                Component
+                {
+                    id: profileMenuItemDelegate
+                    MenuItem
+                    {
+                        id: item
+                        text: model_data ? model_data.name : ""
+                        checkable: true;
+                        checked: model_data ? model_data.active : false;
+                        exclusiveGroup: profileMenuGroup;
+                        onTriggered:
+                        {
+                            UM.MachineManager.setActiveProfile(model_data.name);
+                            if (!model_data.active) {
+                                //Selecting a profile was canceled; undo menu selection
+                                profileMenuInstantiator.model.setProperty(model_index, "active", false);
+                                var activeProfileName = UM.MachineManager.activeProfile;
+                                var activeProfileIndex = profileMenuInstantiator.model.find("name", activeProfileName);
+                                profileMenuInstantiator.model.setProperty(activeProfileIndex, "active", true);
+                            }
+                        }
+                    }
+                }
+
+                MenuSeparator { id: profileMenuSeparator }
 
                 MenuItem { action: actions.addProfile; }
                 MenuItem { action: actions.manageProfiles; }
@@ -312,7 +359,7 @@ UM.MainWindow
                             if (i == drop.urls.length - 1)
                             {
                                 var meshName = backgroundItem.getMeshName(drop.urls[i].toString())
-                                backgroundItem.hasMesh(meshName)
+                                backgroundItem.hasMesh(decodeURIComponent(meshName))
                             }
                         }
                     }
@@ -326,8 +373,8 @@ UM.MainWindow
                 {
                     bottom: parent.bottom;
                     right: sidebar.left;
-                    bottomMargin: UM.Theme.sizes.default_margin.height;
-                    rightMargin: UM.Theme.sizes.default_margin.width;
+                    bottomMargin: UM.Theme.getSize("default_margin").height;
+                    rightMargin: UM.Theme.getSize("default_margin").width;
                 }
             }
 
@@ -336,7 +383,7 @@ UM.MainWindow
                 anchors
                 {
                     horizontalCenter: parent.horizontalCenter
-                    horizontalCenterOffset: -(UM.Theme.sizes.sidebar.width/ 2)
+                    horizontalCenterOffset: -(UM.Theme.getSize("sidebar").width/ 2)
                     top: parent.verticalCenter;
                     bottom: parent.bottom;
                 }
@@ -350,10 +397,10 @@ UM.MainWindow
                 //anchors.right: parent.right;
                 //anchors.bottom: parent.bottom
                 anchors.top: viewModeButton.bottom
-                anchors.topMargin: UM.Theme.sizes.default_margin.height;
+                anchors.topMargin: UM.Theme.getSize("default_margin").height;
                 anchors.left: viewModeButton.left;
                 //anchors.bottom: buttons.top;
-                //anchors.bottomMargin: UM.Theme.sizes.default_margin.height;
+                //anchors.bottomMargin: UM.Theme.getSize("default_margin").height;
 
                 height: childrenRect.height;
 
@@ -365,15 +412,15 @@ UM.MainWindow
                 id: openFileButton;
                 //style: UM.Backend.progress < 0 ? UM.Theme.styles.open_file_button : UM.Theme.styles.tool_button;
                 text: catalog.i18nc("@action:button","Open File");
-                iconSource: UM.Theme.icons.load
+                iconSource: UM.Theme.getIcon("load")
                 style: UM.Theme.styles.tool_button
                 tooltip: '';
                 anchors
                 {
                     top: parent.top;
-                    //topMargin: UM.Theme.sizes.loadfile_margin.height
+                    //topMargin: UM.Theme.getSize("loadfile_margin").height
                     left: parent.left;
-                    //leftMargin: UM.Theme.sizes.loadfile_margin.width
+                    //leftMargin: UM.Theme.getSize("loadfile_margin").width
                 }
                 action: actions.open;
             }
@@ -384,14 +431,14 @@ UM.MainWindow
                 anchors
                 {
                     left: parent.left
-                    leftMargin: UM.Theme.sizes.default_margin.width;
+                    leftMargin: UM.Theme.getSize("default_margin").width;
                     bottom: parent.bottom
-                    bottomMargin: UM.Theme.sizes.default_margin.height;
+                    bottomMargin: UM.Theme.getSize("default_margin").height;
                 }
 
-                source: UM.Theme.images.logo;
-                width: UM.Theme.sizes.logo.width;
-                height: UM.Theme.sizes.logo.height;
+                source: UM.Theme.getImage("logo");
+                width: UM.Theme.getSize("logo").width;
+                height: UM.Theme.getSize("logo").height;
                 z: -1;
 
                 sourceSize.width: width;
@@ -405,11 +452,11 @@ UM.MainWindow
                 anchors
                 {
                     top: toolbar.bottom;
-                    topMargin: UM.Theme.sizes.window_margin.height;
+                    topMargin: UM.Theme.getSize("window_margin").height;
                     left: parent.left;
                 }
                 text: catalog.i18nc("@action:button","View Mode");
-                iconSource: UM.Theme.icons.viewmode;
+                iconSource: UM.Theme.getIcon("viewmode");
 
                 style: UM.Theme.styles.tool_button;
                 tooltip: '';
@@ -442,7 +489,7 @@ UM.MainWindow
 
                 anchors {
                     top: openFileButton.bottom;
-                    topMargin: UM.Theme.sizes.window_margin.height;
+                    topMargin: UM.Theme.getSize("window_margin").height;
                     left: parent.left;
                 }
             }
@@ -458,18 +505,28 @@ UM.MainWindow
                     right: parent.right;
                 }
 
-                width: UM.Theme.sizes.sidebar.width;
+                width: UM.Theme.getSize("sidebar").width;
 
                 addMachineAction: actions.addMachine;
                 configureMachinesAction: actions.configureMachines;
                 addProfileAction: actions.addProfile;
                 manageProfilesAction: actions.manageProfiles;
+
+                configureSettingsAction: Action
+                {
+                    onTriggered:
+                    {
+                        preferences.visible = true;
+                        preferences.setPage(2);
+                        preferences.getCurrentItem().scrollToSection(source.key);
+                    }
+                }
             }
 
             Rectangle
             {
-                x: base.mouseX + UM.Theme.sizes.default_margin.width;
-                y: base.mouseY + UM.Theme.sizes.default_margin.height;
+                x: base.mouseX + UM.Theme.getSize("default_margin").width;
+                y: base.mouseY + UM.Theme.getSize("default_margin").height;
 
                 width: childrenRect.width;
                 height: childrenRect.height;
@@ -491,25 +548,22 @@ UM.MainWindow
         {
             //; Remove & re-add the general page as we want to use our own instead of uranium standard.
             removePage(0);
-            insertPage(0, catalog.i18nc("@title:tab","General"), generalPage);
+            insertPage(0, catalog.i18nc("@title:tab","General"), Qt.resolvedUrl("GeneralPage.qml"));
 
             //: View preferences page title
-            insertPage(1, catalog.i18nc("@title:tab","View"), viewPage);
+            insertPage(1, catalog.i18nc("@title:tab","View"), Qt.resolvedUrl("ViewPage.qml"));
 
             //Force refresh
             setPage(0)
         }
 
-        Item {
-            visible: false
-            GeneralPage
+        onVisibleChanged:
+        {
+            if(!visible)
             {
-                id: generalPage
-            }
-
-            ViewPage
-            {
-                id: viewPage
+                // When the dialog closes, switch to the General page.
+                // This prevents us from having a heavy page like Setting Visiblity active in the background.
+                setPage(0);
             }
         }
     }
@@ -582,7 +636,7 @@ UM.MainWindow
         addMachine.onTriggered: addMachineWizard.visible = true;
         addProfile.onTriggered: { UM.MachineManager.createProfile(); preferences.visible = true; preferences.setPage(4); }
 
-        preferences.onTriggered: { preferences.visible = true; preferences.setPage(0); }
+        preferences.onTriggered: { preferences.visible = true; }
         configureMachines.onTriggered: { preferences.visible = true; preferences.setPage(3); }
         manageProfiles.onTriggered: { preferences.visible = true; preferences.setPage(4); }
 
@@ -649,7 +703,7 @@ UM.MainWindow
         //TODO: Support multiple file selection, workaround bug in KDE file dialog
         //selectMultiple: true
         nameFilters: UM.MeshFileHandler.supportedReadFileTypes;
-
+        folder: Printer.getDefaultPath()
         onAccepted:
         {
             //Because several implementations of the file dialog only update the folder
@@ -659,7 +713,7 @@ UM.MainWindow
 
             UM.MeshFileHandler.readLocalFile(fileUrl)
             var meshName = backgroundItem.getMeshName(fileUrl.toString())
-            backgroundItem.hasMesh(meshName)
+            backgroundItem.hasMesh(decodeURIComponent(meshName))
         }
     }
 
@@ -686,11 +740,6 @@ UM.MainWindow
             addMachineWizard.visible = true
             addMachineWizard.firstRun = false
         }
-    }
-
-    Component.onCompleted:
-    {
-        UM.Theme.load(UM.Resources.getPath(UM.Resources.Themes, "cura"))
     }
 
     Timer

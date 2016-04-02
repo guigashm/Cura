@@ -19,7 +19,12 @@ Item
     property int platform_height: UM.MachineManager.getSettingValue("machine_depth")
     anchors.fill: parent;
     property variant printer_connection: UM.USBPrinterManager.connectedPrinterList.getItem(0).printer
-    Component.onCompleted: printer_connection.homeHead()
+    Component.onCompleted:
+    {
+        printer_connection.homeBed()
+        printer_connection.moveHeadRelative(0, 0, 3)
+        printer_connection.homeHead()
+    }
     UM.I18nCatalog { id: catalog; name:"cura"}
     property variant wizard: null;
 
@@ -47,7 +52,7 @@ Item
     {
         id: pageDescription
         anchors.top: pageTitle.bottom
-        anchors.topMargin: UM.Theme.sizes.default_margin.height
+        anchors.topMargin: UM.Theme.getSize("default_margin").height
         width: parent.width
         wrapMode: Text.WordWrap
         text: catalog.i18nc("@label","To make sure your prints will come out great, you can now adjust your buildplate. When you click 'Move to Next Position' the nozzle will move to the different positions that can be adjusted.")
@@ -56,7 +61,7 @@ Item
     {
         id: bedlevelingText
         anchors.top: pageDescription.bottom
-        anchors.topMargin: UM.Theme.sizes.default_margin.height
+        anchors.topMargin: UM.Theme.getSize("default_margin").height
         width: parent.width
         wrapMode: Text.WordWrap
         text: catalog.i18nc("@label", "For every postition; insert a piece of paper under the nozzle and adjust the print bed height. The print bed height is right when the paper is slightly gripped by the tip of the nozzle.")
@@ -65,10 +70,10 @@ Item
     Item{
         id: bedlevelingWrapper
         anchors.top: bedlevelingText.bottom
-        anchors.topMargin: UM.Theme.sizes.default_margin.height
+        anchors.topMargin: UM.Theme.getSize("default_margin").height
         anchors.horizontalCenter: parent.horizontalCenter
         height: skipBedlevelingButton.height
-        width: bedlevelingButton.width + skipBedlevelingButton.width + UM.Theme.sizes.default_margin.height < wizardPage.width ? bedlevelingButton.width + skipBedlevelingButton.width + UM.Theme.sizes.default_margin.height : wizardPage.width
+        width: bedlevelingButton.width + skipBedlevelingButton.width + UM.Theme.getSize("default_margin").height < wizardPage.width ? bedlevelingButton.width + skipBedlevelingButton.width + UM.Theme.getSize("default_margin").height : wizardPage.width
         Button
         {
             id: bedlevelingButton
@@ -79,15 +84,23 @@ Item
             {
                 if(wizardPage.leveling_state == 0)
                 {
-                    printer_connection.moveHead(platform_width, 0 ,0)
+                    printer_connection.moveHeadRelative(0, 0, 3)
+                    printer_connection.homeHead()
+                    printer_connection.moveHeadRelative(0, 0, 3)
+                    printer_connection.moveHeadRelative(platform_width - 10, 0, 0)
+                    printer_connection.moveHeadRelative(0, 0, -3)
                 }
                 if(wizardPage.leveling_state == 1)
                 {
-                    printer_connection.moveHead(platform_width/2, platform_height, 0)
+                    printer_connection.moveHeadRelative(0, 0, 3)
+                    printer_connection.moveHeadRelative(-platform_width/2, platform_height - 10, 0)
+                    printer_connection.moveHeadRelative(0, 0, -3)
                 }
                 if(wizardPage.leveling_state == 2)
                 {
-                    printer_connection.moveHead(0, 0, 0)
+                    printer_connection.moveHeadRelative(0, 0, 3)
+                    printer_connection.moveHeadRelative(-platform_width/2 + 10, -(platform_height + 10), 0)
+                    printer_connection.moveHeadRelative(0, 0, -3)
                 }
                 wizardPage.leveling_state++
                 if (wizardPage.leveling_state >= 3){
@@ -103,11 +116,22 @@ Item
         {
             id: skipBedlevelingButton
             anchors.top: parent.width < wizardPage.width ? parent.top : bedlevelingButton.bottom
-            anchors.topMargin: parent.width < wizardPage.width ? 0 : UM.Theme.sizes.default_margin.height/2
+            anchors.topMargin: parent.width < wizardPage.width ? 0 : UM.Theme.getSize("default_margin").height/2
             anchors.left: parent.width < wizardPage.width ? bedlevelingButton.right : parent.left
-            anchors.leftMargin: parent.width < wizardPage.width ? UM.Theme.sizes.default_margin.width : 0
+            anchors.leftMargin: parent.width < wizardPage.width ? UM.Theme.getSize("default_margin").width : 0
             text: catalog.i18nc("@action:button","Skip Bedleveling");
-            onClicked: base.visible = false;
+            onClicked: {
+                if(wizardPage.wizard.lastPage ==  true){
+                    var old_page_count = wizardPage.wizard.getPageCount()
+                    // Delete old pages (if any)
+                    for (var i = old_page_count - 1; i > 0; i--)
+                    {
+                        wizardPage.wizard.removePage(i)
+                    }
+                    wizardPage.wizard.currentPage = 0
+                    wizardPage.wizard.visible = false
+                }
+            }
         }
     }
 
@@ -116,7 +140,7 @@ Item
         id: resultText
         visible: false
         anchors.top: bedlevelingWrapper.bottom
-        anchors.topMargin: UM.Theme.sizes.default_margin.height
+        anchors.topMargin: UM.Theme.getSize("default_margin").height
         anchors.left: parent.left
         width: parent.width
         wrapMode: Text.WordWrap

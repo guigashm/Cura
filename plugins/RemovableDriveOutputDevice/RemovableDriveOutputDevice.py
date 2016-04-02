@@ -8,7 +8,6 @@ from UM.Mesh.MeshWriter import MeshWriter
 from UM.Scene.Iterator.BreadthFirstIterator import BreadthFirstIterator
 from UM.OutputDevice.OutputDevice import OutputDevice
 from UM.OutputDevice import OutputDeviceError
-from UM.Preferences import Preferences
 
 from UM.i18n import i18nCatalog
 catalog = i18nCatalog("cura")
@@ -26,6 +25,7 @@ class RemovableDriveOutputDevice(OutputDevice):
         self._writing = False
 
     def requestWrite(self, node, file_name = None, filter_by_machine = False):
+        filter_by_machine = True # This plugin is indended to be used by machine (regardless of what it was told to do)
         if self._writing:
             raise OutputDeviceError.DeviceBusyError()
 
@@ -72,10 +72,10 @@ class RemovableDriveOutputDevice(OutputDevice):
             job.start()
         except PermissionError as e:
             Logger.log("e", "Permission denied when trying to write to %s: %s", file_name, str(e))
-            raise OutputDeviceError.PermissionDeniedError() from e
+            raise OutputDeviceError.PermissionDeniedError(catalog.i18nc("@info:status", "Could not save to <filename>{0}</filename>: <message>{1}</message>").format(file_name, str(e))) from e
         except OSError as e:
             Logger.log("e", "Operating system would not let us write to %s: %s", file_name, str(e))
-            raise OutputDeviceError.WriteRequestFailedError() from e
+            raise OutputDeviceError.WriteRequestFailedError(catalog.i18nc("@info:status", "Could not save to <filename>{0}</filename>: <message>{1}</message>").format(file_name, str(e))) from e
 
     def _onProgress(self, job, progress):
         if hasattr(job, "_message"):

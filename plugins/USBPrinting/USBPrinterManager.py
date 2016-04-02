@@ -4,8 +4,6 @@
 from UM.Signal import Signal, SignalEmitter
 from . import PrinterConnection
 from UM.Application import Application
-from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
-from UM.Scene.SceneNode import SceneNode
 from UM.Resources import Resources
 from UM.Logger import Logger
 from UM.PluginRegistry import PluginRegistry
@@ -19,9 +17,7 @@ import threading
 import platform
 import glob
 import time
-import os
 import os.path
-import sys
 from UM.Extension import Extension
 
 from PyQt5.QtQuick import QQuickView
@@ -60,7 +56,7 @@ class USBPrinterManager(QObject, SignalEmitter, OutputDevicePlugin, Extension):
     @pyqtProperty(float, notify = progressChanged)
     def progress(self):
         progress = 0
-        for name, connection in self._printer_connections.items():
+        for printer_name, connection in self._printer_connections.items(): # TODO: @UnusedVariable "printer_name"
             progress += connection.progress
 
         return progress / len(self._printer_connections)
@@ -106,6 +102,7 @@ class USBPrinterManager(QObject, SignalEmitter, OutputDevicePlugin, Extension):
             try:
                 self._printer_connections[printer_connection].updateFirmware(Resources.getPath(CuraApplication.ResourceTypes.Firmware, self._getDefaultFirmwareName()))
             except FileNotFoundError:
+                self._printer_connections[printer_connection].setProgress(100, 100)
                 Logger.log("w", "No firmware found for printer %s", printer_connection)
                 continue
 
@@ -132,30 +129,46 @@ class USBPrinterManager(QObject, SignalEmitter, OutputDevicePlugin, Extension):
         return USBPrinterManager._instance
 
     def _getDefaultFirmwareName(self):
-        machine_type = Application.getInstance().getMachineManager().getActiveMachineInstance().getMachineDefinition().getId()
-        firmware_name = ""
-        baudrate = 250000
-        if sys.platform.startswith("linux"):
-                baudrate = 115200
-        if machine_type == "ultimaker_original":
-            firmware_name = "MarlinUltimaker"
-            firmware_name += "-%d" % (baudrate)
-        elif machine_type == "ultimaker_original_plus":
-            firmware_name = "MarlinUltimaker-UMOP-%d" % (baudrate)
-        elif machine_type == "Witbox":
-            return "MarlinWitbox.hex"
-        elif machine_type == "ultimaker2go":
-            return "MarlinUltimaker2go.hex"
-        elif machine_type == "ultimaker2extended":
-            return "MarlinUltimaker2extended.hex"
-        elif machine_type == "ultimaker2":
-            return "MarlinUltimaker2.hex"
+        machine_instance = Application.getInstance().getMachineManager().getActiveMachineInstance()
+        machine_type = machine_instance.getMachineDefinition().getId()
+        if platform.system() == "Linux":
+            baudrate = 115200
+        else:
+            baudrate = 250000
+
+        # NOTE: The keyword used here is the id of the machine. You can find the id of your machine in the *.json file, eg.
+        # https://github.com/Ultimaker/Cura/blob/master/resources/machines/ultimaker_original.json#L2
+        # The *.hex files are stored at a seperate repository:
+        # https://github.com/Ultimaker/cura-binary-data/tree/master/cura/resources/firmware
+        machine_without_extras  = {"bq_witbox"                : "MarlinWitbox.hex",
+                                   "ultimaker_original"       : "MarlinUltimaker-{baudrate}.hex",
+                                   "ultimaker_original_plus"  : "MarlinUltimaker-UMOP-{baudrate}.hex",
+                                   "ultimaker2"               : "MarlinUltimaker2.hex",
+                                   "ultimaker2_go"            : "MarlinUltimaker2go.hex",
+                                   "ultimaker2plus"           : "MarlinUltimaker2plus.hex",
+                                   "ultimaker2_extended"      : "MarlinUltimaker2extended.hex",
+                                   "ultimaker2_extended_plus" : "MarlinUltimaker2extended-plus.hex",
+                                   }
+        machine_with_heated_bed = {"ultimaker_original"       : "MarlinUltimaker-HBK-{baudrate}.hex",
+                                   }
 
         ##TODO: Add check for multiple extruders
+        hex_file = None
+        if  machine_type in machine_without_extras.keys(): # The machine needs to be defined here!
+            if  machine_type in machine_with_heated_bed.keys() and machine_instance.getMachineSettingValue("machine_heated_bed"):
+                Logger.log("d", "Choosing firmware with heated bed enabled for machine %s.", machine_type)
+                hex_file = machine_with_heated_bed[machine_type] # Return firmware with heated bed enabled
+            else:
+                Logger.log("d", "Choosing basic firmware for machine %s.", machine_type)
+                hex_file = machine_without_extras[machine_type] # Return "basic" firmware
+        else:
+            Logger.log("e", "There is no firmware for machine %s.", machine_type)
 
-        if firmware_name != "":
-            firmware_name += ".hex"
-        return firmware_name
+        if hex_file:
+            return hex_file.format(baudrate=baudrate)
+        else:
+            Logger.log("e", "Could not find any firmware for machine %s.", machine_type)
+            raise FileNotFoundError()
 
     def _addRemovePorts(self, serial_ports):
         # First, find and add all new or changed keys

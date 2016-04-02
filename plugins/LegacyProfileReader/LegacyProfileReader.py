@@ -51,10 +51,10 @@ class LegacyProfileReader(ProfileReader):
     #   \return A set of local variables, one for each setting in the legacy
     #   profile.
     def prepareLocals(self, config_parser, config_section, defaults):
-        locals = defaults.copy() #Don't edit the original!
+        copied_locals = defaults.copy() #Don't edit the original!
         for option in config_parser.options(config_section):
-            locals[option] = config_parser.get(config_section, option)
-        return locals
+            copied_locals[option] = config_parser.get(config_section, option)
+        return copied_locals
 
     ##  Reads a legacy Cura profile from a file and returns it.
     #
@@ -63,9 +63,10 @@ class LegacyProfileReader(ProfileReader):
     #   file could not be read or didn't contain a valid profile, \code None
     #   \endcode is returned.
     def read(self, file_name):
+        if file_name.split(".")[-1] != "ini":
+            return None
         Logger.log("i", "Importing legacy profile from file " + file_name + ".")
         profile = Profile(machine_manager = Application.getInstance().getMachineManager(), read_only = False) #Create an empty profile.
-        profile.setName("Imported Legacy Profile")
 
         parser = configparser.ConfigParser(interpolation = None)
         try:
@@ -123,5 +124,5 @@ class LegacyProfileReader(ProfileReader):
 
         if len(profile.getChangedSettings()) == 0:
             Logger.log("i", "A legacy profile was imported but everything evaluates to the defaults, creating an empty profile.")
-
+        profile.setDirty(True)
         return profile

@@ -1,7 +1,6 @@
 # Copyright (c) 2015 Ultimaker B.V.
 # Cura is released under the terms of the AGPLv3 or higher.
 
-import os
 import numpy
 
 from PyQt5.QtGui import QImage, qRed, qGreen, qBlue
@@ -33,8 +32,8 @@ class ImageReader(MeshReader):
         depth = img.height()
 
         largest = max(width, depth)
-        width = width / largest * self._ui.defaultWidth
-        depth = depth / largest * self._ui.defaultDepth
+        width = width / largest * self._ui.default_width
+        depth = depth / largest * self._ui.default_depth
 
         self._ui.setWidthAndDepth(width, depth)
         self._ui.showConfigUI()
@@ -49,8 +48,8 @@ class ImageReader(MeshReader):
         return self._generateSceneNode(file_name, size, self._ui.peak_height, self._ui.base_height, self._ui.smoothing, 512, self._ui.image_color_invert)
 
     def _generateSceneNode(self, file_name, xz_size, peak_height, base_height, blur_iterations, max_size, image_color_invert):
-        mesh = None
-        scene_node = None
+        mesh = None # TODO: @UnusedVariable
+        scene_node = None # TODO: @UnusedVariable
 
         scene_node = SceneNode()
 
@@ -111,8 +110,8 @@ class ImageReader(MeshReader):
         if image_color_invert:
             height_data = 1 - height_data
 
-        for i in range(0, blur_iterations):
-            copy = numpy.pad(height_data, ((1, 1), (1, 1)), mode='edge')
+        for _ in range(0, blur_iterations):
+            copy = numpy.pad(height_data, ((1, 1), (1, 1)), mode= "edge")
 
             height_data += copy[1:-1, 2:]
             height_data += copy[1:-1, :-2]
@@ -138,7 +137,7 @@ class ImageReader(MeshReader):
 
         # initialize to texel space vertex offsets.
         # 6 is for 6 vertices for each texel quad.
-        heightmap_vertices = numpy.zeros((width_minus_one * height_minus_one, 6, 3), dtype=numpy.float32)
+        heightmap_vertices = numpy.zeros((width_minus_one * height_minus_one, 6, 3), dtype = numpy.float32)
         heightmap_vertices = heightmap_vertices + numpy.array([[
             [0, base_height, 0],
             [0, base_height, texel_height],
@@ -146,9 +145,9 @@ class ImageReader(MeshReader):
             [texel_width, base_height, texel_height],
             [texel_width, base_height, 0],
             [0, base_height, 0]
-        ]], dtype=numpy.float32)
+        ]], dtype = numpy.float32)
 
-        offsetsz, offsetsx = numpy.mgrid[0:height_minus_one, 0:width-1]
+        offsetsz, offsetsx = numpy.mgrid[0: height_minus_one, 0: width - 1]
         offsetsx = numpy.array(offsetsx, numpy.float32).reshape(-1, 1) * texel_width
         offsetsz = numpy.array(offsetsz, numpy.float32).reshape(-1, 1) * texel_height
 

@@ -61,6 +61,8 @@ class StartSliceJob(Job):
                 if temp_list:
                     object_groups.append(temp_list)
                 Job.yieldThread()
+            if len(object_groups) == 0:
+                Logger.log("w", "No objects suitable for one at a time found, or no correct order found")
         else:
             temp_list = []
             for node in DepthFirstIterator(self._scene.getRoot()):
@@ -79,15 +81,17 @@ class StartSliceJob(Job):
 
         self._sendSettings(self._profile)
 
-        slice_message = self._socket.createMessage("cura.proto.Slice");
+        slice_message = self._socket.createMessage("cura.proto.Slice")
 
         for group in object_groups:
-            group_message = slice_message.addRepeatedMessage("object_lists");
-            for object in group:
-                mesh_data = object.getMeshData().getTransformed(object.getWorldTransformation())
+            group_message = slice_message.addRepeatedMessage("object_lists")
+            if group[0].getParent().callDecoration("isGroup"):
+                self._handlePerObjectSettings(group[0].getParent(), group_message)
+            for current_object in group:
+                mesh_data = current_object.getMeshData().getTransformed(current_object.getWorldTransformation())
 
-                obj = group_message.addRepeatedMessage("objects");
-                obj.id = id(object)
+                obj = group_message.addRepeatedMessage("objects")
+                obj.id = id(current_object)
 
                 verts = numpy.array(mesh_data.getVertices())
                 verts[:,[1,2]] = verts[:,[2,1]]
@@ -95,13 +99,13 @@ class StartSliceJob(Job):
 
                 obj.vertices = verts
 
-                self._handlePerObjectSettings(object, obj)
+                self._handlePerObjectSettings(current_object, obj)
 
                 Job.yieldThread()
 
         Logger.log("d", "Sending data to engine for slicing.")
         self._socket.sendMessage(slice_message)
-
+        Logger.log("d", "Sending data to engine is completed")
         self.setResult(True)
 
     def _expandGcodeTokens(self, key, value, settings):
@@ -142,7 +146,6 @@ class StartSliceJob(Job):
         object_settings = node.callDecoration("getAllSettingValues")
         if not object_settings:
             return
-
         for key, value in object_settings.items():
             setting = message.addRepeatedMessage("settings")
             setting.name = key
